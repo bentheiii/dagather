@@ -1,0 +1,26 @@
+[tool.poetry]
+name = <$packagename$>
+version = "0.0.1.dev"
+description = <$$>
+authors = [<$$>]
+license = <$$>
+readme = "README.md"
+repository = <$$>
+packages = [
+    {include=<$$>}
+]
+
+[tool.poetry.dependencies]
+python = <$$>
+
+[tool.poetry.dev-dependencies]
+pydantic = "*"
+pytest = "*"
+flake8 = { version = "*", allow-prereleases = true }
+pytest-cov = "*"
+sphinx = "*"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
