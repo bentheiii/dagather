@@ -1,3 +1,3 @@
-# <$package$> Changelog
+# dagather Changelog
 # 0.0.1 - unreleased
 * initial release

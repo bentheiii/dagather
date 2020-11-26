@@ -1,21 +1,22 @@
 [tool.poetry]
-name = <$packagename$>
+name = "dagather"
 version = "0.0.1.dev"
-description = <$$>
-authors = [<$$>]
-license = <$$>
+description = "directed acyclic gather"
+authors = ["ben avrahami"]
+license = "MIT lisence"
 readme = "README.md"
-repository = <$$>
+repository = "https://github.com/bentheiii/dagather"
 packages = [
-    {include=<$$>}
+    {include="dagather"}
 ]
 
 [tool.poetry.dependencies]
-python = <$$>
+python = "^3.7"
 
 [tool.poetry.dev-dependencies]
 pydantic = "*"
 pytest = "*"
+pytest-asyncio = "*"
 flake8 = { version = "*", allow-prereleases = true }
 pytest-cov = "*"
 sphinx = "*"

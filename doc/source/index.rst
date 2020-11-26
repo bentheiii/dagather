@@ -1,4 +1,4 @@
-Welcome to <$package$>'s documentation!
+Welcome to dagather's documentation!
 ===================================
 .. toctree::
     :maxdepth: 2
