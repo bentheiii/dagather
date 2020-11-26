@@ -1,5 +1,5 @@
 # Dagather
-dagather (directed acyclic gather) is a new way to plan out and schedule asynchronous tasks. The tasks are organized, with each task specifying the tasks that come before it. The tasks are then run in topological order, ensuring that each operation will start as soon as it is able to without waiting for routines it does not need.
+dagather (**d**irected **a**cyclic **gather**) is a new way to plan out and schedule asynchronous tasks. The tasks are organized, with each task specifying the tasks that come before it. The tasks are then run in topological order, ensuring that each operation will start as soon as it is able to without waiting for routines it does not need.
 
 ```python
 from asyncio import sleep
