@@ -23,20 +23,17 @@ async def b(a):
     await sleep(2)
 
 @foo.register
-async def c(a, t):
-    # positional parameters and keyword parameters are 
-    # forwarded to each task separately
+async def c(a):
     await sleep(1)
-    return t + a
+    return 'testing'
 
 @foo.register
 async def d():
     await sleep(1)
 
 @foo.register
-async def e(d, c, t):
+async def e(d, c):
     await sleep(1)
-    return t
 
 result = await foo(t=6)
 # when foo is called, it runs each of its registered tasks 
@@ -46,8 +43,8 @@ result = await foo(t=6)
 assert result == {
     a: 12,
     b: None,
-    c: 18,
+    c: 'testing',
     d: None,
-    e: 6
+    e: None
 }
 ```
