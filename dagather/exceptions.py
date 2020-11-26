@@ -1,5 +1,5 @@
-try:
-    from graphlib import CycleError
-except ImportError:
-    class CycleError(ValueError):
-        pass
+__all__ = ['CycleError']
+
+
+class CycleError(ValueError):
+    pass

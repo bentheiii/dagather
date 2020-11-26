@@ -16,7 +16,6 @@ T = TypeVar('T')
 if sys.version_info < (3, 8, 0):
     _ct = create_task
 
-
     def create_task(coro, *, name=None):
         return _ct(coro)
 
@@ -35,7 +34,7 @@ _CONTINUE_ALL = object()
 
 class Subtask(Generic[T]):
     def __init__(self, name: str,
-                 callback: Callable[..., Coroutine[T]],
+                 callback: Callable[..., Coroutine[None, None, T]],
                  dependencies: Set[Subtask],
                  exception_policy: ExceptionPolicy,
                  return_exception: bool
@@ -153,7 +152,9 @@ class Dagather:
                     raise CycleError(f"cyclic dependancy between multiple subtasks: {list(not_ready)}")
                 break
 
+            # pytype: disable=annotation-type-mismatch #in future versions, pending will 100% return tasks
             done_tasks, pending = await wait(pending, return_when=FIRST_COMPLETED)
+            # pytype: enable=annotation-type-mismatch
 
             done: Task
             for done in done_tasks:
