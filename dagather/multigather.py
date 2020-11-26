@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import sys
 from asyncio import wait, Task, create_task, FIRST_COMPLETED
 from collections import defaultdict, namedtuple
-from enum import auto, Enum
+from enum import Enum, auto
 from functools import update_wrapper, partial
 from inspect import signature, Parameter
-from typing import Set, Callable, TypeVar, Generic, Coroutine, Dict
+from typing import Set, Callable, TypeVar, Coroutine, Dict, Generic
 
 from dagather.exceptions import CycleError
 from dagather.util import remove_keys_transitively, filter_dict
 
 T = TypeVar('T')
+
+if sys.version_info < (3, 8, 0):
+    _ct = create_task
+
+
+    def create_task(coro, *, name=None):
+        return _ct(coro)
 
 
 class ExceptionPolicy(Enum):
