@@ -54,7 +54,7 @@ class Abort(BaseException):
         super().__init__(post_error_result)
 
 
-ExceptionHandler = Callable[[Exception, 'Subtask'], PostErrorResult]
+ExceptionHandler = Callable[[Exception, 'TaskTemplate'], PostErrorResult]
 """
 A protocol for exception handlers, that dictate how subtasks should behave if they fail.
 """
@@ -84,6 +84,7 @@ class TaskTemplate(Generic[T]):
     """
     A template for a sub-task in a dagather instance
     """
+
     def __init__(self, name: str,
                  callback: Callable[..., Coroutine[None, None, T]],
                  dependencies: Set[TaskTemplate],
@@ -110,12 +111,14 @@ class TaskTemplate(Generic[T]):
             return e.args[0]
         except Exception as e:
             return self.exception_handler(e, self)
-        else:
-            if isinstance(result, PostErrorResult):
-                raise TypeError('subtask must not return a PostErrorResult, raise an AbortSubtask instead')
-            return result
 
-    def __call__(self, *args, **kwargs):
+        # pytype: disable=name-error
+        if isinstance(result, PostErrorResult):
+            raise TypeError('subtask must not return a PostErrorResult, raise an AbortSubtask instead')
+        return result
+        # pytype: enable=name-error
+
+    def __call__(self, *args, **kwargs) -> Coroutine[None, None, T]:
         """
         call the base callable of the template.
         """
