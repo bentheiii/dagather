@@ -15,7 +15,6 @@ if sys.version_info < (3, 8, 0):
     # prior to 3.8, create_task did not accept name parameter
     _ct = create_task
 
-
     def create_task(coro, *, name=None):
         return _ct(coro)
 

@@ -54,7 +54,7 @@ class Abort(BaseException):
         super().__init__(post_error_result)
 
 
-ExceptionHandler = Callable[[Exception, 'Subtask'], PostErrorResult]
+ExceptionHandler = Callable[[Exception, 'TaskTemplate'], PostErrorResult]
 """
 A protocol for exception handlers, that dictate how subtasks should behave if they fail.
 """
