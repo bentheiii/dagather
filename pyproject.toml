@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dagather"
-version = "0.0.1.dev"
+version = "0.0.1"
 description = "directed acyclic gather"
 authors = ["ben avrahami"]
 license = "MIT lisence"
