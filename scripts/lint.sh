@@ -6,5 +6,6 @@ if [ "$res" -eq "0" ]
   then
     echo "pytype not run, please run in python 3.8 or lower"
   else
+    poetry run pip install "pytype>=2020.06.01"
     poetry run pytype --keep-going dagather
 fi
