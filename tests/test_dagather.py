@@ -2,7 +2,7 @@ from asyncio import sleep
 
 from pytest import mark, raises
 
-from dagather import Dagather, ExceptionPolicy
+from dagather import Dagather, ErrorHandler, CancelPolicy, Abort, PostErrorResult
 from dagather.exceptions import CycleError
 
 atest = mark.asyncio
@@ -126,7 +126,7 @@ async def test_missing_args():
 
 
 @atest
-async def test_nameof_subtask():
+async def test_nameof_template():
     dag = Dagather()
 
     @dag.register
@@ -153,7 +153,7 @@ async def test_args():
 
 
 @atest
-async def test_call_sub():
+async def test_call_template():
     dag = Dagather()
 
     @dag.register
@@ -223,7 +223,7 @@ async def test_error_no_rollback():
     assert ex == ['a']
 
 
-def make_error_prone(return_exceptions, exception_policy):
+def make_error_prone(return_exceptions, cancellation_policy):
     dag = Dagather()
 
     ex = []
@@ -233,7 +233,7 @@ def make_error_prone(return_exceptions, exception_policy):
     async def a():
         ex.append('a')
 
-    @dag.register(return_exceptions=return_exceptions, exception_policy=exception_policy)
+    @dag.register(exception_handler=ErrorHandler(cancellation_policy, return_exceptions))
     async def b(a):
         ex2.append('b0')
         raise ValueError('foobar')
@@ -258,7 +258,7 @@ def make_error_prone(return_exceptions, exception_policy):
 
 @atest
 async def test_error_cancels():
-    dag, ex1, ex2, _ = make_error_prone(False, ExceptionPolicy.cancel_not_started)
+    dag, ex1, ex2, _ = make_error_prone(False, CancelPolicy.cancel_not_started)
 
     with raises(ValueError, match='foobar'):
         await dag()
@@ -269,7 +269,7 @@ async def test_error_cancels():
 
 @atest
 async def test_return_errors():
-    dag, ex1, ex2, (a, b, c, d, e) = make_error_prone(True, ExceptionPolicy.cancel_not_started)
+    dag, ex1, ex2, (a, b, c, d, e) = make_error_prone(True, CancelPolicy.cancel_not_started)
 
     result = await dag()
     assert result == {a: None, b: result[b], c: None}
@@ -282,7 +282,7 @@ async def test_return_errors():
 @atest
 async def test_return_errors_continue():
     dag, ex1, ex2, (a, b, c, d, e) = make_error_prone(return_exceptions=True,
-                                                      exception_policy=ExceptionPolicy.continue_all)
+                                                      cancellation_policy=CancelPolicy.continue_all)
 
     result = await dag()
     assert result == {a: None, b: result[b], c: None, d: None, e: None}
@@ -295,7 +295,7 @@ async def test_return_errors_continue():
 @atest
 async def test_return_errors_cancel_branch():
     dag, ex1, ex2, (a, b, c, d, e) = make_error_prone(return_exceptions=True,
-                                                      exception_policy=ExceptionPolicy.cancel_children)
+                                                      cancellation_policy=CancelPolicy.cancel_children)
 
     result = await dag()
     assert result == {a: None, b: result[b], c: None, d: None}
@@ -308,7 +308,7 @@ async def test_return_errors_cancel_branch():
 @atest
 async def test_raise_continue():
     dag, ex1, ex2, _ = make_error_prone(return_exceptions=False,
-                                        exception_policy=ExceptionPolicy.continue_all)
+                                        cancellation_policy=CancelPolicy.continue_all)
 
     with raises(ValueError, match='foobar'):
         await dag()
@@ -320,10 +320,49 @@ async def test_raise_continue():
 @atest
 async def test_raise_cancel_branch():
     dag, ex1, ex2, _ = make_error_prone(return_exceptions=False,
-                                        exception_policy=ExceptionPolicy.cancel_children)
+                                        cancellation_policy=CancelPolicy.cancel_children)
 
     with raises(ValueError, match='foobar'):
         await dag()
 
     assert ex1 == ['a', 'c0', 'c1', 'd']
     assert ex2 == ['b0']
+
+
+@atest
+async def test_abort():
+    dag = Dagather()
+
+    @dag.register
+    async def a():
+        return 1
+
+    @dag.register
+    async def b(a):
+        return 2
+
+    @dag.register
+    async def c(b):
+        return 3
+
+    @dag.register
+    async def d(a):
+        raise Abort(PostErrorResult('result', CancelPolicy.cancel_children, True))
+
+    @dag.register
+    async def e(d):
+        raise Exception
+
+    assert await dag() == {a: 1, b: 2, c: 3, d: 'result'}
+
+
+@atest
+async def test_return_pse():
+    dag = Dagather()
+
+    @dag.register
+    async def a():
+        return PostErrorResult('result', CancelPolicy.cancel_not_started, True)
+
+    with raises(TypeError):
+        await dag()

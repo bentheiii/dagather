@@ -35,7 +35,7 @@ async def d():
 async def e(d, c):
     await sleep(1)
 
-result = await foo(t=6)
+result = await foo()
 # when foo is called, it runs each of its registered tasks 
 # as soon as all its dependencies are finished.
 # once all the tasks are finished, it will return a dict
