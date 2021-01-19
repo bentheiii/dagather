@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum, auto
-from functools import update_wrapper
-from typing import Callable, NamedTuple, TypeVar, Generic, Coroutine, Set, Any
+from functools import update_wrapper, partial
+from typing import Callable, TypeVar, Generic, Coroutine, Set, Any, Union, Type, Mapping
 
 
 class CancelPolicy(Enum):
     """
-    Which template to cancel if an exception is raised.
+    Which templates to cancel if an exception is raised.
     """
-    cancel_not_started = auto()
+    cancel_all = auto()
     """
-    Cancel all tasks that have not yet been started.
+    Cancel all tasks, causing all started tasks to raise a CancelledError and discarding all others
     """
-    cancel_children = auto()
+    discard_not_started = auto()
     """
-    Cancel all subtasks that rely on the result of the failed task.
+    Discard all tasks that have not yet been started.
+    """
+    discard_children = auto()
+    """
+    Discard all subtasks that rely on the result of the failed task.
     """
     continue_all = auto()
     """
@@ -23,30 +28,29 @@ class CancelPolicy(Enum):
     """
 
 
-class PostErrorResult(NamedTuple):
-    """
-    Behavioral specifications after a task raised an exception.
-    .. warning::
-        PostErrorResult is handled especially inside dagather. Returning it directly will cause unexpected behaviour.
-    """
-    result: Any
-    """
-    The result to be recorded as the output of the task. This is usually the exception raised.
-    """
+class PostErrorResult:
     cancel_policy: CancelPolicy
-    """
-    The cancel policy to employ.
-    """
-    return_exception: bool
-    """
-    Whether to suppress the exception and not raise it in the parent coroutine (after all non-cancelled tasks are
-     completed).
-    """
+
+    @classmethod
+    def exception_handler(cls, cancel_policy: CancelPolicy):
+        return partial(cls, cancel_policy=cancel_policy)
+
+
+@dataclass
+class ContinueResult(PostErrorResult):
+    return_value: Any
+    cancel_policy: CancelPolicy = CancelPolicy.continue_all
+
+
+@dataclass
+class PropagateError(PostErrorResult):
+    exception: BaseException
+    cancel_policy: CancelPolicy = CancelPolicy.cancel_all
 
 
 class Abort(BaseException):
     """
-    A special exception type, handleable by the default exception handler.
+    A special exception type, handleable by the task templates.
     If raised inside a dagather task, the dagather acts according to the post_error_result.
     """
 
@@ -54,27 +58,29 @@ class Abort(BaseException):
         super().__init__(post_error_result)
 
 
-ExceptionHandler = Callable[[Exception, 'TaskTemplate'], PostErrorResult]
+# pytype: disable=not-supported-yet
+ExceptionHandler = Union[
+    PostErrorResult,
+    Callable[[BaseException], 'ExceptionHandler'],
+    Mapping[Type[BaseException], 'ExceptionHandler']
+]
+# pytype: enable=not-supported-yet
 """
 A protocol for exception handlers, that dictate how subtasks should behave if they fail.
 """
 
 
-class ErrorHandler(ExceptionHandler):
-    """
-    The standard default exception handler
-    """
-
-    def __init__(self, cancel_policy: CancelPolicy = CancelPolicy.cancel_not_started, return_exception: bool = False):
-        """
-        :param cancel_policy: The cancel policy to apply on exceptions
-        :param return_exception: Whether to suppress the exception from the main dagather.
-        """
-        self.cancel_policy = cancel_policy
-        self.return_exception = return_exception
-
-    def __call__(self, exc, template) -> PostErrorResult:
-        return PostErrorResult(exc, self.cancel_policy, self.return_exception)
+def handle_exception(handler: ExceptionHandler, exc: BaseException, base_explicit=False):
+    if isinstance(handler, PostErrorResult):
+        if not base_explicit and not isinstance(exc, Exception):
+            return PropagateError(exc)
+        return handler
+    if callable(handler):
+        return handle_exception(handler(exc), exc, base_explicit)
+    for k, v in handler.items():
+        if isinstance(exc, k):
+            return handle_exception(v, exc, True)
+    return PropagateError(exc)
 
 
 T = TypeVar('T')
@@ -109,8 +115,8 @@ class TaskTemplate(Generic[T]):
             result = await self(*args, **kwargs)
         except Abort as e:
             return e.args[0]
-        except Exception as e:
-            return self.exception_handler(e, self)
+        except BaseException as e:
+            return handle_exception(self.exception_handler, e)
 
         # pytype: disable=name-error
         if isinstance(result, PostErrorResult):
