@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dagather"
-version = "0.0.1"
+version = "0.1.0"
 description = "directed acyclic gather"
 authors = ["ben avrahami"]
 license = "MIT lisence"
@@ -14,13 +14,12 @@ packages = [
 python = "^3.7"
 
 [tool.poetry.dev-dependencies]
-pydantic = "*"
 pytest = "*"
 pytest-asyncio = "*"
 flake8 = { version = "*", allow-prereleases = true }
 pytest-cov = "*"
 sphinx = "*"
-pytype = { version = ">=2020.06.01", python = ">=3.7, <3.9"}
+pytype = { version = ">=2020.06.01", markers = "python_version < '3.9' and python_version >= '3.6' and platform_system != 'Windows'"}
 
 [build-system]
 requires = ["poetry>=0.12"]

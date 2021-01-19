@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import sys
-from asyncio import wait, Task, create_task, FIRST_COMPLETED
+from asyncio import wait, Task, create_task, FIRST_COMPLETED, CancelledError
 from collections import defaultdict
+from contextvars import ContextVar
 from functools import partial
 from inspect import signature, Parameter
-from typing import Set, Dict, Callable, overload, Any, TypeVar
+from typing import Set, Dict, Callable, overload, TypeVar
 
+from dagather.sibling_tasks import SiblingTasks
 from dagather.exceptions import CycleError
-from dagather.tasktemplate import TaskTemplate, ExceptionHandler, ErrorHandler, PostErrorResult, CancelPolicy
+from dagather.result import DagatherResult
+from dagather.tasktemplate import TaskTemplate, ExceptionHandler, CancelPolicy, PropagateError, ContinueResult, \
+    PostErrorResult
 from dagather.util import remove_keys_transitively, filter_dict
+
+if sys.version_info < (3, 9, 0):
+    def cancel_task(task, msg):
+        return task.cancel()
+else:
+    def cancel_task(task, msg):
+        return task.cancel(msg)
 
 if sys.version_info < (3, 8, 0):
     # prior to 3.8, create_task did not accept name parameter
@@ -24,13 +35,18 @@ param_kind_ignore = frozenset((
 
 T = TypeVar('T')
 
+sibling_tasks: ContextVar[SiblingTasks] = ContextVar('sibling_tasks')
+"""
+A context variable to store all the tasks currently running or completed in a single Dagather run
+"""
+
 
 class Dagather:
     """
     A collection of tasks templates.
     """
 
-    def __init__(self, default_exception_handler: ExceptionHandler = ErrorHandler()):
+    def __init__(self, default_exception_handler: ExceptionHandler = PropagateError):
         """
         :param default_exception_handler: The default exception handler for new task templates
         """
@@ -96,7 +112,7 @@ class Dagather:
 
         return template
 
-    async def __call__(self, *args, **kwargs) -> Dict[TaskTemplate, Any]:
+    async def __call__(self, *args, **kwargs) -> DagatherResult:
         """
         Call all the task templates in topological order
         :param args: forwarded to all tasks as positional arguments
@@ -106,7 +122,6 @@ class Dagather:
         """
         delayed_exception = None
         intermediary = {}
-        results = {}
 
         bad_keys = kwargs.keys() & self._templates.keys()
         if bad_keys:
@@ -121,19 +136,24 @@ class Dagather:
                 name=st.name
             )
             tasks[task] = st
+            inv_tasks[st] = task
             return task
 
         tasks: Dict[Task, TaskTemplate] = {}
         # mapping created tasks to their original template
+        inv_tasks: Dict[TaskTemplate, Task] = {}
 
         pending: Set[Task] = set()
-        # a set of all currently running template
+        # a set of all currently running templates
         not_ready: Dict[TaskTemplate, Set[TaskTemplate]] = {}
-        # a mapping of all template that are waiting for other tasks to complete
+        # a mapping of all templates that are waiting for other tasks to complete
         dependants: Dict[TaskTemplate, Set[TaskTemplate]] = defaultdict(set)
-        # a mapping of all template to all other subtasks that *might* be waiting for them directly
+        # a mapping of all templates to all other subtasks that *might* be waiting for them directly
+        discarded: Set[TaskTemplate] = set()
+        # a collection of all the discarded tasks
 
-        # build these dicts
+        sibling_tasks.set(SiblingTasks(inv_tasks, not_ready, discarded, dependants))
+
         for st in self._templates.values():
             for dependancy in st.dependencies:
                 dependants[dependancy].add(st)
@@ -149,9 +169,14 @@ class Dagather:
                     raise CycleError(f"cyclic dependancy between multiple subtasks: {list(not_ready)}")
                 break
 
-            # pytype: disable=annotation-type-mismatch #in future versions, pending will 100% return tasks
-            done_tasks, pending = await wait(pending, return_when=FIRST_COMPLETED)
-            # pytype: enable=annotation-type-mismatch
+            try:
+                # pytype: disable=annotation-type-mismatch #in future versions, pending will 100% return tasks
+                done_tasks, pending = await wait(pending, return_when=FIRST_COMPLETED)
+                # pytype: enable=annotation-type-mismatch
+            except CancelledError:
+                for task in tasks:
+                    cancel_task(task, 'cancelled by caller')
+                raise
 
             done: Task
             for done in done_tasks:
@@ -160,16 +185,26 @@ class Dagather:
                 result = done.result()
 
                 if isinstance(result, PostErrorResult):
-                    if not result.return_exception \
-                            and not delayed_exception:
-                        delayed_exception = result.result
-                    if result.cancel_policy is CancelPolicy.cancel_not_started:
+                    if result.cancel_policy is CancelPolicy.cancel_all:
+                        discarded.update(not_ready)
                         not_ready.clear()
-                    elif result.cancel_policy is CancelPolicy.cancel_children:
-                        remove_keys_transitively(not_ready, dependants, st)
-                    result = result.result
+                        for task in tasks:
+                            cancel_task(task, f'cancelled by sibling task "{st.name}"')
+                    elif result.cancel_policy is CancelPolicy.discard_not_started:
+                        discarded.update(not_ready)
+                        not_ready.clear()
+                    elif result.cancel_policy is CancelPolicy.discard_children:
+                        remove_keys_transitively(not_ready, dependants, st, discarded)
 
-                results[st] = intermediary[st.name] = result
+                    if isinstance(result, PropagateError):
+                        if not delayed_exception:
+                            delayed_exception = result.exception
+                        result = result.exception
+                    else:
+                        assert isinstance(result, ContinueResult)
+                        result = result.return_value
+
+                intermediary[st.name] = result
 
                 for dependant in dependants[st]:
                     if dependant not in not_ready:
@@ -182,4 +217,4 @@ class Dagather:
 
         if delayed_exception:
             raise delayed_exception
-        return results
+        return DagatherResult(inv_tasks, discarded)
